@@ -190,8 +190,8 @@ struct WeeklyReport: Codable {
         let c = current
         guard let ml = c.waterMlPerDay else { return nil }
         let days = "\(c.waterDaysLogged) day\(c.waterDaysLogged == 1 ? "" : "s")"
-        let small = "\(c.smallBottles) metal bottle\(c.smallBottles == 1 ? "" : "s") (500 ml)"
-        let large = "\(c.largeBottles) bottled water\(c.largeBottles == 1 ? "" : "s") (1.5 L)"
+        let small = "\(c.smallBottles) metal bottle\(c.smallBottles == 1 ? "" : "s")"
+        let large = "\(c.largeBottles) store-bought bottle\(c.largeBottles == 1 ? "" : "s")"
         return String(format: "%.1f L a day on the ", ml / 1000) + days + " logged: " + small + " and " + large + " over the week."
     }
 
@@ -246,7 +246,8 @@ struct WeeklyReport: Codable {
             }
         }
         lines.append("")
-        lines.append("The full report is attached. These readings come from consumer devices and are not a medical assessment.")
+        lines.append(meals.isEmpty ? "The full report is attached." : "The full report and a picture of this week's meals are attached.")
+        lines.append("These readings come from consumer devices and are not a medical assessment.")
         lines.append("")
         lines.append(name)
         return lines.joined(separator: "\n")
@@ -478,8 +479,8 @@ enum WeeklyReportBuilder {
         m.dailyWaterMl = waterByDay.map { DayValue(date: $0.key, value: $0.value.reduce(0) { $0 + $1.ml }) }.sorted { $0.date < $1.date }
         m.waterDaysLogged = waterByDay.count
         m.waterMlPerDay = average(m.dailyWaterMl.map(\.value))
-        m.smallBottles = weekWater.filter { $0.ml < 1000 }.count
-        m.largeBottles = weekWater.filter { $0.ml >= 1000 }.count
+        m.smallBottles = weekWater.filter { $0.kind == WaterBottle.metal.rawValue }.count
+        m.largeBottles = weekWater.filter { $0.kind == WaterBottle.large.rawValue }.count
         return m
     }
 
@@ -544,11 +545,12 @@ enum ReportFiles {
         return url
     }
 
-    static func save(_ report: WeeklyReport, pdf: Data?) -> (pdf: URL?, json: URL?, markdown: URL?) {
+    static func save(_ report: WeeklyReport, pdf: Data?, foodImage: Data?) -> (pdf: URL?, json: URL?, markdown: URL?, foodImage: URL?) {
         let stem = report.fileStem
         var pdfURL: URL?
         var jsonURL: URL?
         var markdownURL: URL?
+        var imageURL: URL?
 
         if let pdf {
             let url = folder.appendingPathComponent(stem + ".pdf")
@@ -560,6 +562,10 @@ enum ReportFiles {
         }
         let url = folder.appendingPathComponent(stem + ".md")
         if (try? report.markdown.write(to: url, atomically: true, encoding: .utf8)) != nil { markdownURL = url }
-        return (pdfURL, jsonURL, markdownURL)
+        if let foodImage {
+            let url = folder.appendingPathComponent(stem + " food.png")
+            if (try? foodImage.write(to: url, options: .atomic)) != nil { imageURL = url }
+        }
+        return (pdfURL, jsonURL, markdownURL, imageURL)
     }
 }

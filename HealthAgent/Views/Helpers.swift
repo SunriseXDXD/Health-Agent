@@ -58,6 +58,7 @@ struct MailComposer: UIViewControllerRepresentable {
             switch url.pathExtension.lowercased() {
             case "pdf": mime = "application/pdf"
             case "json": mime = "application/json"
+            case "png": mime = "image/png"
             default: mime = "text/plain"
             }
             controller.addAttachmentData(data, mimeType: mime, fileName: url.lastPathComponent)

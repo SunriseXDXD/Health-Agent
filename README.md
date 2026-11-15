@@ -28,9 +28,10 @@ again; a paid developer account extends that to a year.
 | `HealthAgent/Services/Forecast.swift` | Smoothed trend, straight-line forecast with a range, energy-balance estimate |
 | `HealthAgent/Services/WeeklyReport.swift` | The Sunday-to-Saturday summary, week-over-week changes, JSON / Markdown export |
 | `HealthAgent/Views/QuickLogView.swift` | Photo-only meal logging: pick a photo, the estimate is saved automatically |
-| `HealthAgent/Models/WaterEntry.swift` | Water log: 500 ml metal bottle and 1.5 L bottled water |
+| `HealthAgent/Models/WaterEntry.swift` | Water log with two bottle sizes (500 ml and 1.5 L by default, set in Settings) |
 | `HealthAgent/Services/GoalPlan.swift` | Monthly weight goal from a full week of data, daily and per-meal targets |
 | `HealthAgent/Views/PlanView.swift` | Goal, targets and dish recommendations |
+| `HealthAgent/Views/FoodSummaryImage.swift` | Picture for the weekly email: meal table and nutrition pie chart |
 | `HealthAgent/Views/` | Today, Meals, Trends, Weekly and Settings screens, plus the PDF page |
 
 ## Weekly report

@@ -13,6 +13,7 @@ struct ReportView: View {
     @State private var report: WeeklyReport?
     @State private var pdfURL: URL?
     @State private var jsonURL: URL?
+    @State private var foodImageURL: URL?
     @State private var isBuilding = false
     @State private var showMail = false
     @State private var showShare = false
@@ -58,7 +59,7 @@ struct ReportView: View {
             .sheet(isPresented: $showMail) {
                 if let report {
                     MailComposer(recipients: Prefs.recipientList, subject: report.emailSubject,
-                                 messageBody: report.emailBody, attachments: [pdfURL].compactMap { $0 }) { result in
+                                 messageBody: report.emailBody, attachments: [pdfURL, foodImageURL].compactMap { $0 }) { result in
                         if result == .sent { status = "Sent to \(Prefs.recipientList.joined(separator: ", "))." }
                     }
                     .ignoresSafeArea()
@@ -162,6 +163,7 @@ struct ReportView: View {
             // Mail is not set up: hand the PDF and the text to the share sheet instead.
             var items: [Any] = [report.emailSubject + "\n\n" + report.emailBody]
             if let pdfURL { items.append(pdfURL) }
+            if let foodImageURL { items.append(foodImageURL) }
             shareItems = items
             showShare = true
         }
@@ -176,10 +178,11 @@ struct ReportView: View {
         let waterSnapshots = waters.map(\.snapshot)
         let built = await WeeklyReportBuilder.build(meals: snapshots, water: waterSnapshots, useAI: true)
         let pdf = ReportPDF.render(built)
-        let files = ReportFiles.save(built, pdf: pdf)
+        let files = ReportFiles.save(built, pdf: pdf, foodImage: FoodImage.render(built))
         report = built
         pdfURL = files.pdf
         jsonURL = files.json
+        foodImageURL = files.foodImage
         status = "Saved in Files › On My iPhone › Health Agent › Weekly summaries."
         // Opened from the Sunday notification: go straight to the email.
         if router.autoEmail {

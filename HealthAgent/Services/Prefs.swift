@@ -12,6 +12,8 @@ enum Prefs {
     static let userName = "userName"
     static let writeToHealth = "writeToHealth"
     static let healthRequested = "healthRequested"
+    static let smallBottleMl = "smallBottleMl"
+    static let largeBottleMl = "largeBottleMl"
 
     static let defaultModel = "gemini-3.5-flash"
 
@@ -27,6 +29,8 @@ enum Prefs {
             recipients: "",
             userName: "Xuyao",
             writeToHealth: true,
+            smallBottleMl: 500.0,
+            largeBottleMl: 1500.0,
         ])
     }
 

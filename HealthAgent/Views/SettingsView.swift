@@ -14,6 +14,8 @@ struct SettingsView: View {
     @AppStorage(Prefs.reportHour) private var reportHour = 11
     @AppStorage(Prefs.recipients) private var recipients = ""
     @AppStorage(Prefs.writeToHealth) private var writeToHealth = true
+    @AppStorage(Prefs.smallBottleMl) private var smallBottleMl = 500.0
+    @AppStorage(Prefs.largeBottleMl) private var largeBottleMl = 1500.0
 
     @State private var apiKey = Keychain.apiKey
     @State private var notificationsDenied = false
@@ -54,6 +56,15 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    bottleRow(WaterBottle.metal.title, value: $smallBottleMl)
+                    bottleRow(WaterBottle.large.title, value: $largeBottleMl)
+                } header: {
+                    Text("Water bottles")
+                } footer: {
+                    Text("The size each button on the Today tab adds. Bottles already logged keep the size they had.")
+                }
+
+                Section {
                     TextField("Your name", text: $userName)
                     TextField("Email addresses, separated by commas", text: $recipients, axis: .vertical)
                         .textInputAutocapitalization(.never)
@@ -91,6 +102,18 @@ struct SettingsView: View {
                 let settings = await UNUserNotificationCenter.current().notificationSettings()
                 notificationsDenied = settings.authorizationStatus == .denied
             }
+        }
+    }
+
+    private func bottleRow(_ title: String, value: Binding<Double>) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            TextField("ml", value: value, format: .number.precision(.fractionLength(0)))
+                .keyboardType(.numberPad)
+                .multilineTextAlignment(.trailing)
+                .frame(width: 80)
+            Text("ml").foregroundStyle(.secondary)
         }
     }
 

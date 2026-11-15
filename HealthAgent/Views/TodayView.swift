@@ -23,6 +23,9 @@ struct TodayView: View {
     @State private var editing: MealEntry?
     @State private var showWeightSheet = false
     @State private var showSettings = false
+    // Read here so the water buttons update when the sizes change in Settings.
+    @AppStorage(Prefs.smallBottleMl) private var smallBottleMl = 500.0
+    @AppStorage(Prefs.largeBottleMl) private var largeBottleMl = 1500.0
 
     private var todaysMeals: [MealEntry] {
         meals.filter { Calendar.current.isDateInToday($0.date) }
@@ -170,8 +173,9 @@ struct TodayView: View {
     private var waterCard: some View {
         let today = todaysWater
         let total = today.reduce(0) { $0 + $1.ml }
-        let small = today.filter { $0.ml < 1000 }.count
-        let large = today.filter { $0.ml >= 1000 }.count
+        let small = today.filter { $0.kind == WaterBottle.metal.rawValue }.count
+        let large = today.filter { $0.kind == WaterBottle.large.rawValue }.count
+        _ = (smallBottleMl, largeBottleMl)
         return VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Label("Water", systemImage: "drop.fill").font(.headline).foregroundStyle(.blue)
@@ -184,7 +188,7 @@ struct TodayView: View {
                 Text((total / 1000).text(1)).font(.system(size: 34, weight: .bold, design: .rounded))
                 Text("L today").font(.caption).foregroundStyle(.secondary)
                 Spacer()
-                Text("\(small) × 500 ml · \(large) × 1.5 L")
+                Text("\(small) metal · \(large) bottled")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -211,7 +215,7 @@ struct TodayView: View {
     }
 
     private func addWater(_ bottle: WaterBottle) {
-        let entry = WaterEntry(date: Date(), ml: bottle.ml)
+        let entry = WaterEntry(date: Date(), ml: bottle.ml, kind: bottle)
         context.insert(entry)
         try? context.save()
         let date = entry.date
