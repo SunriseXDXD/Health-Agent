@@ -56,7 +56,7 @@ enum ReminderManager {
         sunday.minute = 0
         let content = UNMutableNotificationContent()
         content.title = "Your weekly health summary is ready"
-        content.body = "Open to review last week's numbers and send the report to your family."
+        content.body = "Tap to open the report email, then press Send."
         content.sound = .default
         content.userInfo = ["kind": "report"]
         let trigger = UNCalendarNotificationTrigger(dateMatching: sunday, repeats: true)

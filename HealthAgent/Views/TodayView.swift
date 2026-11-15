@@ -15,11 +15,14 @@ struct TodaySnapshot {
 struct TodayView: View {
     @EnvironmentObject private var router: AppRouter
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.modelContext) private var context
     @Query(sort: \MealEntry.date, order: .reverse) private var meals: [MealEntry]
+    @Query(sort: \WaterEntry.date, order: .reverse) private var waters: [WaterEntry]
 
     @State private var snapshot = TodaySnapshot()
     @State private var editing: MealEntry?
     @State private var showWeightSheet = false
+    @State private var showSettings = false
 
     private var todaysMeals: [MealEntry] {
         meals.filter { Calendar.current.isDateInToday($0.date) }
@@ -34,6 +37,7 @@ struct TodayView: View {
                 VStack(spacing: 16) {
                     energyCard
                     mealsCard
+                    waterCard
                     statsGrid
                     bodyCard
                 }
@@ -41,6 +45,18 @@ struct TodayView: View {
             }
             .background(Color(.systemGroupedBackground))
             .navigationTitle("Today")
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        showSettings = true
+                    } label: {
+                        Image(systemName: "gearshape")
+                    }
+                }
+            }
+            .sheet(isPresented: $showSettings) {
+                SettingsView()
+            }
             .refreshable { await load() }
             .task { await load() }
             .onChange(of: scenePhase) { _, phase in
@@ -145,6 +161,72 @@ struct TodayView: View {
             .padding(.vertical, 12)
         }
         .buttonStyle(.plain)
+    }
+
+    private var todaysWater: [WaterEntry] {
+        waters.filter { Calendar.current.isDateInToday($0.date) }
+    }
+
+    private var waterCard: some View {
+        let today = todaysWater
+        let total = today.reduce(0) { $0 + $1.ml }
+        let small = today.filter { $0.ml < 1000 }.count
+        let large = today.filter { $0.ml >= 1000 }.count
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("Water", systemImage: "drop.fill").font(.headline).foregroundStyle(.blue)
+                Spacer()
+                if !today.isEmpty {
+                    Button("Undo") { undoWater() }.font(.subheadline)
+                }
+            }
+            HStack(alignment: .firstTextBaseline) {
+                Text((total / 1000).text(1)).font(.system(size: 34, weight: .bold, design: .rounded))
+                Text("L today").font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Text("\(small) × 500 ml · \(large) × 1.5 L")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            HStack(spacing: 10) {
+                ForEach(WaterBottle.allCases) { bottle in
+                    Button {
+                        addWater(bottle)
+                    } label: {
+                        VStack(spacing: 2) {
+                            Text("+ \(bottle.sizeLabel)").font(.body.weight(.semibold))
+                            Text(bottle.title).font(.caption)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 4)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.blue)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding()
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private func addWater(_ bottle: WaterBottle) {
+        let entry = WaterEntry(date: Date(), ml: bottle.ml)
+        context.insert(entry)
+        try? context.save()
+        let date = entry.date
+        if Prefs.defaults.bool(forKey: Prefs.writeToHealth) {
+            Task { await HealthKitManager.shared.saveWater(ml: bottle.ml, date: date) }
+        }
+    }
+
+    /// Removes the most recent bottle logged today.
+    private func undoWater() {
+        guard let last = todaysWater.first else { return }
+        let date = last.date
+        context.delete(last)
+        try? context.save()
+        Task { await HealthKitManager.shared.deleteWater(at: date) }
     }
 
     private var statsGrid: some View {

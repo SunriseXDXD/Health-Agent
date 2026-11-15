@@ -161,6 +161,92 @@ enum GeminiClient {
         )
     }
 
+    // MARK: - Dish suggestions
+
+    private static let dishSchemaJSON = """
+    {
+      "type": "OBJECT",
+      "properties": {
+        "lunch": {"type": "ARRAY"},
+        "dinner": {"type": "ARRAY"},
+        "tip": {"type": "STRING", "description": "One practical sentence for the coming week."}
+      },
+      "required": ["lunch", "dinner", "tip"]
+    }
+    """
+
+    private static let dishItemJSON = """
+    {
+      "type": "OBJECT",
+      "properties": {
+        "name": {"type": "STRING"},
+        "reason": {"type": "STRING", "description": "One sentence: why it fits, and the portion or swap that makes it fit."},
+        "kcal": {"type": "NUMBER"},
+        "protein_g": {"type": "NUMBER"},
+        "carbs_g": {"type": "NUMBER"},
+        "fat_g": {"type": "NUMBER"}
+      },
+      "required": ["name", "reason", "kcal", "protein_g", "carbs_g", "fat_g"]
+    }
+    """
+
+    /// Recommends lunch and dinner dishes that fit the plan, starting from what the user already eats.
+    static func suggestDishes(meals: [MealSnapshot], plan: GoalPlan) async throws -> DishSuggestions {
+        // Build the schema with the dish object inlined in both lists.
+        guard var schema = (try? JSONSerialization.jsonObject(with: Data(dishSchemaJSON.utf8))) as? [String: Any],
+              var properties = schema["properties"] as? [String: Any],
+              let dish = try? JSONSerialization.jsonObject(with: Data(dishItemJSON.utf8)) else { throw AIError.badResponse }
+        let list: [String: Any] = ["type": "ARRAY", "items": dish]
+        properties["lunch"] = list
+        properties["dinner"] = list
+        schema["properties"] = properties
+
+        let recent = meals.sorted { $0.date > $1.date }.prefix(30)
+        let history = recent.map { meal in
+            String(format: "- %@: %@ (%.0f kcal, protein %.0f g, carbs %.0f g, fat %.0f g)",
+                   meal.mealType, meal.summary, meal.kcal, meal.proteinG, meal.carbsG, meal.fatG)
+        }.joined(separator: "\n")
+        let lunch = plan.target(for: .lunch)
+        let dinner = plan.target(for: .dinner)
+        let prompt = """
+        These are meals I logged recently. They were identified from photos I took, so they show what I actually eat and can get:
+        \(history)
+
+        My targets per meal:
+        - Lunch: about \(Int(lunch.kcal)) kcal, protein \(Int(lunch.proteinG)) g, carbohydrate \(Int(lunch.carbsG)) g, fat \(Int(lunch.fatG)) g
+        - Dinner: about \(Int(dinner.kcal)) kcal, protein \(Int(dinner.proteinG)) g, carbohydrate \(Int(dinner.carbsG)) g, fat \(Int(dinner.fatG)) g
+
+        Recommend 3 lunch dishes and 3 dinner dishes. Start from dishes I already eat or close variants I could get at the same places, and say what portion, swap or side makes each one fit the target. Give estimated nutrition for the dish as you recommend it.
+        """
+        let config: [String: Any] = [
+            "response_mime_type": "application/json",
+            "response_schema": schema,
+            "temperature": 0.6,
+        ]
+        let system = "You are a practical meal planner. Recommend ordinary, obtainable dishes, not recipes. Write in English. Keep each reason to one sentence."
+
+        let text = try await generate(system: system, parts: [["text": prompt]], config: config)
+        guard let output = (try? JSONSerialization.jsonObject(with: Data(text.utf8))) as? [String: Any] else {
+            throw AIError.badResponse
+        }
+        func dishes(_ key: String) -> [DishSuggestion] {
+            ((output[key] as? [[String: Any]]) ?? []).map { item in
+                DishSuggestion(
+                    name: (item["name"] as? String) ?? "Dish",
+                    reason: (item["reason"] as? String) ?? "",
+                    kcal: number(item["kcal"]),
+                    proteinG: number(item["protein_g"]),
+                    carbsG: number(item["carbs_g"]),
+                    fatG: number(item["fat_g"])
+                )
+            }
+        }
+        let result = DishSuggestions(generatedAt: Date(), lunch: dishes("lunch"), dinner: dishes("dinner"),
+                                     tip: (output["tip"] as? String) ?? "")
+        guard !result.lunch.isEmpty || !result.dinner.isEmpty else { throw AIError.badResponse }
+        return result
+    }
+
     // MARK: - Weekly observations
 
     /// Asks Gemini for two or three short observations on the week's figures.

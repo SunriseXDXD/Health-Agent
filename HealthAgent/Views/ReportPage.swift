@@ -14,7 +14,10 @@ struct ReportPage: View {
             if !report.current.dailySteps.isEmpty { stepsChart }
             if !report.current.dailyRestingHR.isEmpty { heartChart }
             if report.current.sleepHours != nil { sleepSection }
-            if !report.current.dailyKcal.isEmpty { foodChart }
+            if report.nutritionLine != nil || !report.current.dailyKcal.isEmpty { nutritionSection }
+            if let line = report.waterLine { textSection("Water", line) }
+            if let line = report.forecastLine { textSection("Weight forecast", line) }
+            if let line = report.goalLine { textSection("Monthly goal", line) }
             observations
             Text("Readings come from an iPhone, an Apple Watch and photo-based meal estimates. This is not a medical assessment.")
                 .font(.system(size: 9))
@@ -100,19 +103,30 @@ struct ReportPage: View {
         }
     }
 
-    private var foodChart: some View {
+    private var nutritionSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            sectionTitle("Food logged (kcal per day)")
-            Chart(report.current.dailyKcal) { day in
-                BarMark(x: .value("Day", day.date, unit: .day), y: .value("kcal", day.value))
-                    .foregroundStyle(Color(red: 0.95, green: 0.6, blue: 0.2))
+            sectionTitle("Nutrition")
+            if let line = report.nutritionLine {
+                Text(line).font(.system(size: 11))
             }
-            .chartXAxis { AxisMarks(values: .stride(by: .day)) { _ in AxisValueLabel(format: .dateTime.weekday(.abbreviated)) } }
-            .frame(height: 110)
-            if let trend = report.weightTrendKgPerWeek, let future = report.weightInFourWeeksKg {
-                Text(String(format: "Weight trend: %+.2f kg a week; about %.1f kg in four weeks if it continues.", trend, future))
-                    .font(.system(size: 11))
+            if !report.current.dailyKcal.isEmpty {
+                Chart(report.current.dailyKcal) { day in
+                    BarMark(x: .value("Day", day.date, unit: .day), y: .value("kcal", day.value))
+                        .foregroundStyle(Color(red: 0.95, green: 0.6, blue: 0.2))
+                }
+                .chartXAxis { AxisMarks(values: .stride(by: .day)) { _ in AxisValueLabel(format: .dateTime.weekday(.abbreviated)) } }
+                .frame(height: 110)
+                Text("Food logged, kcal per day")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.gray)
             }
+        }
+    }
+
+    private func textSection(_ title: String, _ line: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            sectionTitle(title)
+            Text(line).font(.system(size: 11))
         }
     }
 

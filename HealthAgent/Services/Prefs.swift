@@ -23,7 +23,7 @@ enum Prefs {
             remindersOn: true,
             lunchMinutes: 13 * 60,
             dinnerMinutes: 19 * 60 + 30,
-            reportHour: 10,
+            reportHour: 11,
             recipients: "",
             userName: "Xuyao",
             writeToHealth: true,

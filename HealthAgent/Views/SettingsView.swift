@@ -3,6 +3,7 @@ import SwiftData
 import UserNotifications
 
 struct SettingsView: View {
+    @Environment(\.dismiss) private var dismiss
     @Query private var meals: [MealEntry]
 
     @AppStorage(Prefs.userName) private var userName = "Xuyao"
@@ -10,7 +11,7 @@ struct SettingsView: View {
     @AppStorage(Prefs.remindersOn) private var remindersOn = true
     @AppStorage(Prefs.lunchMinutes) private var lunchMinutes = 13 * 60
     @AppStorage(Prefs.dinnerMinutes) private var dinnerMinutes = 19 * 60 + 30
-    @AppStorage(Prefs.reportHour) private var reportHour = 10
+    @AppStorage(Prefs.reportHour) private var reportHour = 11
     @AppStorage(Prefs.recipients) private var recipients = ""
     @AppStorage(Prefs.writeToHealth) private var writeToHealth = true
 
@@ -61,11 +62,11 @@ struct SettingsView: View {
                 } header: {
                     Text("Weekly report")
                 } footer: {
-                    Text("The report goes to these addresses when you tap Email on the Weekly tab.")
+                    Text("On Sunday a notification arrives at the time above; tapping it opens the report email to these addresses, ready to send.")
                 }
 
                 Section {
-                    Toggle("Save meals to Apple Health", isOn: $writeToHealth)
+                    Toggle("Save meals and water to Apple Health", isOn: $writeToHealth)
                     Button("Review Health access") {
                         Task { await HealthKitManager.shared.requestAuthorization() }
                     }
@@ -76,6 +77,12 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Settings")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
             .onChange(of: remindersOn) { _, _ in reschedule() }
             .onChange(of: lunchMinutes) { _, _ in reschedule() }
             .onChange(of: dinnerMinutes) { _, _ in reschedule() }

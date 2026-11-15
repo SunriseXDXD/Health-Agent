@@ -6,10 +6,12 @@ import UserNotifications
 final class AppRouter: ObservableObject {
     static let shared = AppRouter()
 
-    enum Tab: Hashable { case today, meals, trends, report, settings }
+    enum Tab: Hashable { case today, meals, plan, trends, report }
 
     @Published var tab: Tab = .today
     @Published var mealToLog: MealType?
+    /// Set when the Sunday notification is tapped, so the report opens its email straight away.
+    @Published var autoEmail = false
 }
 
 final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
@@ -40,6 +42,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
                 AppRouter.shared.mealToLog = MealType(rawValue: meal ?? "") ?? .lunch
             } else if kind == "report" {
                 AppRouter.shared.tab = .report
+                AppRouter.shared.autoEmail = true
             }
         }
         completionHandler()
@@ -56,7 +59,7 @@ struct HealthAgentApp: App {
             RootView()
                 .environmentObject(router)
         }
-        .modelContainer(for: MealEntry.self)
+        .modelContainer(for: [MealEntry.self, WaterEntry.self])
     }
 }
 
@@ -73,15 +76,15 @@ struct RootView: View {
             MealsView()
                 .tabItem { Label("Meals", systemImage: "fork.knife") }
                 .tag(AppRouter.Tab.meals)
+            PlanView()
+                .tabItem { Label("Plan", systemImage: "target") }
+                .tag(AppRouter.Tab.plan)
             TrendsView()
                 .tabItem { Label("Trends", systemImage: "chart.xyaxis.line") }
                 .tag(AppRouter.Tab.trends)
             ReportView()
                 .tabItem { Label("Weekly", systemImage: "doc.text") }
                 .tag(AppRouter.Tab.report)
-            SettingsView()
-                .tabItem { Label("Settings", systemImage: "gearshape") }
-                .tag(AppRouter.Tab.settings)
         }
         .sheet(item: $router.mealToLog) { mealType in
             QuickLogView(mealType: mealType)

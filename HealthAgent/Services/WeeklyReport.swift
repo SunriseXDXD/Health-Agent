@@ -69,7 +69,15 @@ struct WeekMetrics: Codable {
     var proteinG: Double?
     var carbsG: Double?
     var fatG: Double?
+    var fiberG: Double?
     var expenditureKcal: Double?
+
+    // Water
+    var dailyWaterMl: [DayValue] = []
+    var waterDaysLogged: Int = 0
+    var waterMlPerDay: Double?
+    var smallBottles: Int = 0
+    var largeBottles: Int = 0
 }
 
 struct HeadlineRow: Identifiable {
@@ -86,6 +94,12 @@ struct WeeklyReport: Codable {
     var previous: WeekMetrics
     var weightTrendKgPerWeek: Double?
     var weightInFourWeeksKg: Double?
+    var weightInFourWeeksLowKg: Double?
+    var weightInFourWeeksHighKg: Double?
+    var bodyFatTrendPctPerWeek: Double?
+    var bodyFatInFourWeeksPct: Double?
+    /// The monthly goal and how this week measured against it; nil until a goal exists.
+    var goalLine: String?
     var observations: [String]
     var meals: [MealSnapshot]
 
@@ -120,6 +134,9 @@ struct WeeklyReport: Codable {
             Self.row("Body fat", c.bodyFatPct, p.bodyFatPct, 1, " %"),
             Self.row("Food intake per day", c.intakeKcal, p.intakeKcal, 0, " kcal"),
             Self.row("Protein per day", c.proteinG, p.proteinG, 0, " g"),
+            Self.row("Carbohydrate per day", c.carbsG, p.carbsG, 0, " g"),
+            Self.row("Fat per day", c.fatG, p.fatG, 0, " g"),
+            Self.row("Water per day", c.waterMlPerDay.map { $0 / 1000 }, p.waterMlPerDay.map { $0 / 1000 }, 1, " L"),
             Self.row("Energy burned per day", c.expenditureKcal, p.expenditureKcal, 0, " kcal"),
             Self.row("Headphone level", c.headphoneDb, p.headphoneDb, 0, " dB"),
             Self.row("Time in daylight per day", c.daylightMinPerDay, p.daylightMinPerDay, 0, " min"),
@@ -128,7 +145,54 @@ struct WeeklyReport: Codable {
             rows.insert(HeadlineRow(label: "Nights of sleep recorded", value: "\(c.sleepNights)",
                                     change: Self.signed(Double(c.sleepNights - p.sleepNights), 0, "")), at: 10)
         }
-        return rows.compactMap { $0 }
+        var result = rows.compactMap { $0 }
+        if let future = weightInFourWeeksKg, let trend = weightTrendKgPerWeek {
+            result.append(HeadlineRow(label: "Predicted weight in 4 weeks",
+                                      value: String(format: "%.1f kg", future),
+                                      change: String(format: "%+.2f kg/wk", trend)))
+        }
+        return result
+    }
+
+    /// Average daily nutrition on fully logged days; nil when no meals were logged.
+    var nutritionLine: String? {
+        let c = current
+        guard let kcal = c.intakeKcal else {
+            guard c.mealsLogged > 0 else { return nil }
+            return "\(c.mealsLogged) meal\(c.mealsLogged == 1 ? "" : "s") logged, but no day had both lunch and dinner, so there is no daily average."
+        }
+        var text = String(format: "Average per fully logged day (%d of 7): %.0f kcal, protein %.0f g, carbohydrate %.0f g, fat %.0f g",
+                          c.completeFoodDays, kcal, c.proteinG ?? 0, c.carbsG ?? 0, c.fatG ?? 0)
+        if let fiber = c.fiberG { text += String(format: ", fibre %.0f g", fiber) }
+        text += "."
+        if let burned = c.expenditureKcal {
+            text += String(format: " Energy burned averaged %.0f kcal a day, a balance of %+.0f kcal.", burned, kcal - burned)
+        }
+        return text
+    }
+
+    /// Where weight and body fat are heading; nil when there are too few readings.
+    var forecastLine: String? {
+        guard let trend = weightTrendKgPerWeek, let future = weightInFourWeeksKg else { return nil }
+        var text = String(format: "Weight is moving %+.2f kg a week. If that continues it will be about %.1f kg in four weeks", trend, future)
+        if let low = weightInFourWeeksLowKg, let high = weightInFourWeeksHighKg {
+            text += String(format: " (likely between %.1f and %.1f kg)", low, high)
+        }
+        text += "."
+        if let fatTrend = bodyFatTrendPctPerWeek, let fatFuture = bodyFatInFourWeeksPct {
+            text += String(format: " Body fat is moving %+.2f points a week, heading for about %.1f%%.", fatTrend, fatFuture)
+        }
+        return text
+    }
+
+    /// Water drunk this week; nil when no bottles were logged.
+    var waterLine: String? {
+        let c = current
+        guard let ml = c.waterMlPerDay else { return nil }
+        let days = "\(c.waterDaysLogged) day\(c.waterDaysLogged == 1 ? "" : "s")"
+        let small = "\(c.smallBottles) metal bottle\(c.smallBottles == 1 ? "" : "s") (500 ml)"
+        let large = "\(c.largeBottles) bottled water\(c.largeBottles == 1 ? "" : "s") (1.5 L)"
+        return String(format: "%.1f L a day on the ", ml / 1000) + days + " logged: " + small + " and " + large + " over the week."
     }
 
     private static func row(_ label: String, _ current: Double?, _ previous: Double?, _ decimals: Int, _ unit: String) -> HeadlineRow? {
@@ -175,6 +239,12 @@ struct WeeklyReport: Codable {
             let change = (row.change == "–") ? "" : " (\(row.change) vs last week)"
             lines.append("\(row.label): \(row.value)\(change)")
         }
+        for extra in [nutritionLine, waterLine, forecastLine, goalLine] {
+            if let extra {
+                lines.append("")
+                lines.append(extra)
+            }
+        }
         lines.append("")
         lines.append("The full report is attached. These readings come from consumer devices and are not a medical assessment.")
         lines.append("")
@@ -188,6 +258,10 @@ struct WeeklyReport: Codable {
         for row in headlineRows {
             text += "| \(row.label) | \(row.value) | \(row.change) |\n"
         }
+        if let nutritionLine { text += "\n## Nutrition\n\n\(nutritionLine)\n" }
+        if let waterLine { text += "\n## Water\n\n\(waterLine)\n" }
+        if let forecastLine { text += "\n## Weight forecast\n\n\(forecastLine)\n" }
+        if let goalLine { text += "\n## Monthly goal\n\n\(goalLine)\n" }
         text += "\n## Observations\n\n"
         for line in observations { text += "- \(line)\n" }
         text += "\nReadings come from consumer devices and meal estimates; this is not a medical assessment.\n"
@@ -207,20 +281,23 @@ enum WeeklyReportBuilder {
         return (start, thisSunday)
     }
 
-    static func build(meals: [MealSnapshot], useAI: Bool) async -> WeeklyReport {
+    static func build(meals: [MealSnapshot], water: [WaterSnapshot], useAI: Bool) async -> WeeklyReport {
         let calendar = Calendar.current
         let week = lastCompletedWeek()
         let previousStart = calendar.date(byAdding: .day, value: -7, to: week.start) ?? week.start
 
-        async let currentMetrics = metrics(from: week.start, to: week.endExclusive, meals: meals)
-        async let previousMetrics = metrics(from: previousStart, to: week.start, meals: meals)
+        async let currentMetrics = metrics(from: week.start, to: week.endExclusive, meals: meals, water: water)
+        async let previousMetrics = metrics(from: previousStart, to: week.start, meals: meals, water: water)
         let trendStart = calendar.date(byAdding: .day, value: -35, to: week.endExclusive) ?? previousStart
         async let weightSeries = HealthKitManager.shared.daily(.weightKg, from: trendStart, to: week.endExclusive)
+        async let fatSeries = HealthKitManager.shared.daily(.bodyFat, from: trendStart, to: week.endExclusive)
 
         let current = await currentMetrics
         let previous = await previousMetrics
         let weights = await weightSeries.map { DataPoint(date: $0.key, value: $0.value) }
         let fit = Forecaster.fit(weights, windowDays: 35)
+        let fats = await fatSeries.map { DataPoint(date: $0.key, value: $0.value * 100) }
+        let fatFit = Forecaster.fit(fats, windowDays: 35)
 
         var report = WeeklyReport(
             generatedAt: Date(),
@@ -232,6 +309,27 @@ enum WeeklyReportBuilder {
             observations: [],
             meals: meals.filter { $0.date >= week.start && $0.date < week.endExclusive }.sorted { $0.date < $1.date }
         )
+
+        if let fit {
+            let band = fit.interval(on: fit.lastDate.addingTimeInterval(28 * 86400))
+            report.weightInFourWeeksLowKg = band.lower
+            report.weightInFourWeeksHighKg = band.upper
+        }
+        if let fatFit {
+            report.bodyFatTrendPctPerWeek = fatFit.slopePerWeek
+            report.bodyFatInFourWeeksPct = fatFit.value(on: fatFit.lastDate.addingTimeInterval(28 * 86400))
+        }
+
+        if let goal = GoalStore.current {
+            var line = goal.summaryLine
+            if let now = current.weightKg {
+                line += String(format: " This week's weight averaged %.1f kg against %.1f kg expected by now.", now, goal.expectedWeight(on: week.endExclusive))
+            }
+            if let intake = current.intakeKcal {
+                line += String(format: " Intake averaged %+.0f kcal against the daily target.", intake - goal.dailyKcal)
+            }
+            report.goalLine = line
+        }
 
         report.observations = ruleBasedObservations(report)
         if useAI, !Keychain.apiKey.isEmpty, let json = try? encode(report), let text = String(data: json, encoding: .utf8) {
@@ -251,7 +349,7 @@ enum WeeklyReportBuilder {
 
     // MARK: - One week of metrics
 
-    static func metrics(from start: Date, to end: Date, meals: [MealSnapshot]) async -> WeekMetrics {
+    static func metrics(from start: Date, to end: Date, meals: [MealSnapshot], water: [WaterSnapshot]) async -> WeekMetrics {
         let health = HealthKitManager.shared
         let calendar = Calendar.current
         let lastDay = calendar.date(byAdding: .day, value: -1, to: end) ?? start
@@ -371,7 +469,17 @@ enum WeeklyReportBuilder {
             m.proteinG = average(complete.values.map { $0.reduce(0) { $0 + $1.proteinG } })
             m.carbsG = average(complete.values.map { $0.reduce(0) { $0 + $1.carbsG } })
             m.fatG = average(complete.values.map { $0.reduce(0) { $0 + $1.fatG } })
+            m.fiberG = average(complete.values.map { $0.reduce(0) { $0 + $1.fiberG } })
         }
+
+        // Water
+        let weekWater = water.filter { $0.date >= start && $0.date < end }
+        let waterByDay = Dictionary(grouping: weekWater) { calendar.startOfDay(for: $0.date) }
+        m.dailyWaterMl = waterByDay.map { DayValue(date: $0.key, value: $0.value.reduce(0) { $0 + $1.ml }) }.sorted { $0.date < $1.date }
+        m.waterDaysLogged = waterByDay.count
+        m.waterMlPerDay = average(m.dailyWaterMl.map(\.value))
+        m.smallBottles = weekWater.filter { $0.ml < 1000 }.count
+        m.largeBottles = weekWater.filter { $0.ml >= 1000 }.count
         return m
     }
 

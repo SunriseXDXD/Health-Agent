@@ -13,6 +13,7 @@ struct TrendsData {
 
 struct TrendsView: View {
     @Query(sort: \MealEntry.date) private var meals: [MealEntry]
+    @Query(sort: \WaterEntry.date) private var waters: [WaterEntry]
 
     @State private var rangeDays = 90
     @State private var horizonWeeks = 8
@@ -30,6 +31,16 @@ struct TrendsView: View {
         let recent = meals.filter { $0.date >= start }
         let grouped = Dictionary(grouping: recent) { calendar.startOfDay(for: $0.date) }
         return grouped.map { DataPoint(date: $0.key, value: $0.value.reduce(0) { $0 + $1.kcal }) }
+            .sorted { $0.date < $1.date }
+    }
+
+    /// Litres of water logged per day.
+    private var water: [DataPoint] {
+        let calendar = Calendar.current
+        let start = rangeStart
+        let recent = waters.filter { $0.date >= start }
+        let grouped = Dictionary(grouping: recent) { calendar.startOfDay(for: $0.date) }
+        return grouped.map { DataPoint(date: $0.key, value: $0.value.reduce(0) { $0 + $1.ml } / 1000) }
             .sorted { $0.date < $1.date }
     }
 
@@ -66,6 +77,9 @@ struct TrendsView: View {
                         energyBalanceText
                     }
 
+                    card("Water (litres)", subtitle: nil) {
+                        simpleChart(water, tint: .blue, bars: true, emptyText: "No water logged yet. Add bottles from the Today tab.")
+                    }
                     card("Steps", subtitle: nil) {
                         simpleChart(data.steps, tint: .green, bars: true)
                     }
@@ -154,9 +168,10 @@ struct TrendsView: View {
     }
 
     @ViewBuilder
-    private func simpleChart(_ points: [DataPoint], tint: Color, bars: Bool) -> some View {
+    private func simpleChart(_ points: [DataPoint], tint: Color, bars: Bool,
+                             emptyText: String = "No data in Apple Health for this period.") -> some View {
         if points.isEmpty {
-            emptyState("No data in Apple Health for this period.")
+            emptyState(emptyText)
         } else {
             Chart(points) { point in
                 if bars {

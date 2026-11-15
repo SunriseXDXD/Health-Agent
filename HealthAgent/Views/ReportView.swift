@@ -5,7 +5,9 @@ import MessageUI
 /// The weekly summary: built on the phone from Apple Health and the meal log,
 /// then sent to the family as a PDF.
 struct ReportView: View {
+    @EnvironmentObject private var router: AppRouter
     @Query private var meals: [MealEntry]
+    @Query private var waters: [WaterEntry]
     @AppStorage(Prefs.recipients) private var recipients = ""
 
     @State private var report: WeeklyReport?
@@ -48,7 +50,10 @@ struct ReportView: View {
                     .disabled(isBuilding)
                 }
             }
-            .task { if report == nil { await build() } }
+            .task { if report == nil || router.autoEmail { await build() } }
+            .onChange(of: router.autoEmail) { _, requested in
+                if requested { Task { await build() } }
+            }
             .refreshable { await build() }
             .sheet(isPresented: $showMail) {
                 if let report {
@@ -84,6 +89,10 @@ struct ReportView: View {
                 .font(.subheadline)
             }
             Divider()
+            detail("Nutrition", report.nutritionLine)
+            detail("Water", report.waterLine)
+            detail("Weight forecast", report.forecastLine)
+            detail("Monthly goal", report.goalLine)
             Text("Observations").font(.headline)
             ForEach(Array(report.observations.enumerated()), id: \.offset) { _, line in
                 Text("• " + line).font(.subheadline)
@@ -97,18 +106,18 @@ struct ReportView: View {
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
     }
 
+    @ViewBuilder
+    private func detail(_ title: String, _ line: String?) -> some View {
+        if let line {
+            Text(title).font(.headline)
+            Text(line).font(.subheadline)
+        }
+    }
+
     private func actions(_ report: WeeklyReport) -> some View {
         VStack(spacing: 10) {
             Button {
-                if MailComposer.canSend {
-                    showMail = true
-                } else {
-                    // Mail is not set up: hand the PDF and the text to the share sheet instead.
-                    var items: [Any] = [report.emailSubject + "\n\n" + report.emailBody]
-                    if let pdfURL { items.append(pdfURL) }
-                    shareItems = items
-                    showShare = true
-                }
+                openEmail(report)
             } label: {
                 Label("Email report to family", systemImage: "paperplane.fill")
                     .frame(maxWidth: .infinity)
@@ -145,18 +154,37 @@ struct ReportView: View {
         }
     }
 
+    /// Opens a ready-to-send email with the PDF attached.
+    private func openEmail(_ report: WeeklyReport) {
+        if MailComposer.canSend {
+            showMail = true
+        } else {
+            // Mail is not set up: hand the PDF and the text to the share sheet instead.
+            var items: [Any] = [report.emailSubject + "\n\n" + report.emailBody]
+            if let pdfURL { items.append(pdfURL) }
+            shareItems = items
+            showShare = true
+        }
+    }
+
     @MainActor
     private func build() async {
         guard !isBuilding else { return }
         isBuilding = true
         defer { isBuilding = false }
         let snapshots = meals.map(\.snapshot)
-        let built = await WeeklyReportBuilder.build(meals: snapshots, useAI: true)
+        let waterSnapshots = waters.map(\.snapshot)
+        let built = await WeeklyReportBuilder.build(meals: snapshots, water: waterSnapshots, useAI: true)
         let pdf = ReportPDF.render(built)
         let files = ReportFiles.save(built, pdf: pdf)
         report = built
         pdfURL = files.pdf
         jsonURL = files.json
         status = "Saved in Files › On My iPhone › Health Agent › Weekly summaries."
+        // Opened from the Sunday notification: go straight to the email.
+        if router.autoEmail {
+            router.autoEmail = false
+            if files.pdf != nil { openEmail(built) }
+        }
     }
 }

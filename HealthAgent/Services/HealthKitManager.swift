@@ -28,11 +28,12 @@ struct Metric {
     static let bodyFat = Metric(id: .bodyFatPercentage, unit: .percent())
     static let leanMassKg = Metric(id: .leanBodyMass, unit: .gramUnit(with: .kilo))
     static let dietaryKcal = Metric(id: .dietaryEnergyConsumed, unit: .kilocalorie())
+    static let heightM = Metric(id: .height, unit: .meter())
 
     static let allRead: [Metric] = [
         steps, distanceKm, flights, activeKcal, basalKcal, exerciseMin, restingHR, walkingHR,
         heartRate, hrvMs, vo2Max, walkingSpeedMps, steadiness, respiratory, headphoneDb,
-        daylightMin, weightKg, bodyFat, leanMassKg, dietaryKcal,
+        daylightMin, weightKg, bodyFat, leanMassKg, dietaryKcal, heightM,
     ]
 }
 
@@ -81,6 +82,7 @@ final class HealthKitManager {
         let ids: [HKQuantityTypeIdentifier] = [
             .bodyMass, .bodyFatPercentage,
             .dietaryEnergyConsumed, .dietaryProtein, .dietaryCarbohydrates, .dietaryFatTotal,
+            .dietaryWater,
         ]
         return Set(ids.map { HKQuantityType($0) })
     }
@@ -278,6 +280,27 @@ final class HealthKitManager {
         let quantity = HKQuantity(unit: metric.unit, doubleValue: value)
         let sample = HKQuantitySample(type: HKQuantityType(metric.id), quantity: quantity, start: date, end: date, metadata: metadata)
         try await store.save(sample)
+    }
+
+    /// Saves one bottle of water to Apple Health.
+    func saveWater(ml: Double, date: Date) async {
+        guard isAvailable, ml > 0 else { return }
+        let sample = HKQuantitySample(type: HKQuantityType(.dietaryWater),
+                                      quantity: HKQuantity(unit: .literUnit(with: .milli), doubleValue: ml),
+                                      start: date, end: date)
+        do {
+            try await store.save(sample)
+        } catch {
+            print("Saving water to Health failed: \(error)")
+        }
+    }
+
+    /// Removes a bottle this app saved at exactly that time (used by Undo).
+    func deleteWater(at date: Date) async {
+        guard isAvailable else { return }
+        let predicate = HKQuery.predicateForSamples(withStart: date.addingTimeInterval(-0.5),
+                                                    end: date.addingTimeInterval(0.5), options: [])
+        _ = try? await store.deleteObjects(of: HKQuantityType(.dietaryWater), predicate: predicate)
     }
 
     /// Saves a meal's energy and macros to Apple Health so other apps see them too.

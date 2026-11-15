@@ -28,14 +28,17 @@ again; a paid developer account extends that to a year.
 | `HealthAgent/Services/Forecast.swift` | Smoothed trend, straight-line forecast with a range, energy-balance estimate |
 | `HealthAgent/Services/WeeklyReport.swift` | The Sunday-to-Saturday summary, week-over-week changes, JSON / Markdown export |
 | `HealthAgent/Views/QuickLogView.swift` | Photo-only meal logging: pick a photo, the estimate is saved automatically |
+| `HealthAgent/Models/WaterEntry.swift` | Water log: 500 ml metal bottle and 1.5 L bottled water |
+| `HealthAgent/Services/GoalPlan.swift` | Monthly weight goal from a full week of data, daily and per-meal targets |
+| `HealthAgent/Views/PlanView.swift` | Goal, targets and dish recommendations |
 | `HealthAgent/Views/` | Today, Meals, Trends, Weekly and Settings screens, plus the PDF page |
 
 ## Weekly report
 
-On Sunday (10:00 by default) a notification opens the Weekly tab. The app builds the
+On Sunday (11:00 by default) a notification arrives; tapping it builds the
 summary for the week that just ended, saves a PDF, a JSON data file and a Markdown copy to
-**Files › On My iPhone › Health Agent › Weekly summaries**, and **Email report to family**
-opens a ready-to-send email with the PDF attached. iOS does not let an app send email
+**Files › On My iPhone › Health Agent › Weekly summaries**, and opens a ready-to-send
+email with the PDF attached. iOS does not let an app send email
 without that one tap.
 
 ## Notes
