@@ -334,7 +334,7 @@ enum WeeklyReportBuilder {
 
         report.observations = ruleBasedObservations(report)
         if useAI, !Keychain.apiKey.isEmpty, let json = try? encode(report), let text = String(data: json, encoding: .utf8) {
-            if let lines = try? await GeminiClient.weeklyObservations(reportJSON: text) {
+            if let lines = try? await DeepSeekClient.weeklyObservations(reportJSON: text) {
                 report.observations = lines
             }
         }

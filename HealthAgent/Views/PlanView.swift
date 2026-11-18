@@ -251,7 +251,7 @@ struct PlanView: View {
         isSuggesting = true
         defer { isSuggesting = false }
         do {
-            let result = try await GeminiClient.suggestDishes(meals: meals.map(\.snapshot), plan: plan)
+            let result = try await DeepSeekClient.suggestDishes(meals: meals.map(\.snapshot), plan: plan)
             DishStore.current = result
             suggestions = result
         } catch {

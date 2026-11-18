@@ -21,92 +21,98 @@ enum AIError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .missingKey:
-            return "Add your Gemini API key in Settings first."
+            return "Add your DeepSeek API key in Settings first."
         case .http(let code, let message):
-            return "Gemini API error \(code): \(message)"
+            return "DeepSeek API error \(code): \(message)"
         case .badResponse:
-            return "Gemini returned a response the app could not read."
+            return "DeepSeek returned a response the app could not read."
         }
     }
 }
 
-/// A small client for the Gemini API (free tier). The key is the user's own and stays on the device.
-enum GeminiClient {
-    /// Sends one generateContent request and returns the text of the reply.
-    private static func generate(system: String, parts: [[String: Any]], config: [String: Any]) async throws -> String {
+/// A small client for the DeepSeek API (OpenAI-compatible chat completions).
+/// The key is the user's own and stays on the device.
+enum DeepSeekClient {
+    private static let endpoint = URL(string: "https://api.deepseek.com/chat/completions")!
+
+    /// Sends one chat request and returns the text of the reply. With `json` set, the reply
+    /// is forced to a JSON object; DeepSeek can return a blank reply in that mode, so one
+    /// blank reply is retried.
+    private static func generate(system: String, parts: [[String: Any]], json: Bool, temperature: Double) async throws -> String {
         let key = Keychain.apiKey
         guard !key.isEmpty else { throw AIError.missingKey }
-        guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(Prefs.modelName):generateContent") else {
-            throw AIError.http(0, "The model name in Settings is not valid.")
-        }
 
-        let systemPart: [String: Any] = ["text": system]
-        let userContent: [String: Any] = ["role": "user", "parts": parts]
-        let body: [String: Any] = [
-            "system_instruction": ["parts": [systemPart]],
-            "contents": [userContent],
-            "generationConfig": config,
+        var body: [String: Any] = [
+            "model": Prefs.modelName,
+            "messages": [
+                ["role": "system", "content": system] as [String: Any],
+                ["role": "user", "content": parts] as [String: Any],
+            ],
+            "temperature": temperature,
+            "max_tokens": 4000,
         ]
+        if json { body["response_format"] = ["type": "json_object"] }
 
-        var request = URLRequest(url: url)
+        var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
-        request.timeoutInterval = 90
-        request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
+        request.timeoutInterval = 120
+        request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
-        let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        for attempt in 0..<2 {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            let reply = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
 
-        if let http = response as? HTTPURLResponse, http.statusCode != 200 {
-            let error = json?["error"] as? [String: Any]
-            let message = (error?["message"] as? String) ?? String(data: data, encoding: .utf8) ?? "Unknown error"
-            throw AIError.http(http.statusCode, message)
+            if let http = response as? HTTPURLResponse, http.statusCode != 200 {
+                let error = reply?["error"] as? [String: Any]
+                let message = (error?["message"] as? String) ?? String(data: data, encoding: .utf8) ?? "Unknown error"
+                throw AIError.http(http.statusCode, message)
+            }
+            guard let choices = reply?["choices"] as? [[String: Any]],
+                  let message = choices.first?["message"] as? [String: Any] else { throw AIError.badResponse }
+
+            // Only the answer is used; any "reasoning_content" from thinking mode is ignored.
+            var text = ((message["content"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if text.hasPrefix("```") {
+                text = text.replacingOccurrences(of: "```json", with: "").replacingOccurrences(of: "```", with: "")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            if !text.isEmpty { return text }
+            if attempt == 0 { continue }
         }
-        guard let candidates = json?["candidates"] as? [[String: Any]],
-              let content = candidates.first?["content"] as? [String: Any],
-              let replyParts = content["parts"] as? [[String: Any]] else { throw AIError.badResponse }
+        throw AIError.badResponse
+    }
 
-        // Skip any "thought" parts and keep the answer text.
-        let text = replyParts
-            .filter { ($0["thought"] as? Bool) != true }
-            .compactMap { $0["text"] as? String }
-            .joined()
-        guard !text.isEmpty else { throw AIError.badResponse }
-        return text
+    private static func textPart(_ text: String) -> [String: Any] {
+        ["type": "text", "text": text]
+    }
+
+    private static func imagePart(_ jpeg: Data) -> [String: Any] {
+        let url: [String: Any] = ["url": "data:image/jpeg;base64," + jpeg.base64EncodedString()]
+        return ["type": "image_url", "image_url": url]
+    }
+
+    /// Instruction telling the model which JSON shape to return.
+    private static func jsonInstruction(_ shape: String) -> String {
+        "\n\nReply with a single json object only, no other text, in exactly this shape:\n" + shape
     }
 
     // MARK: - Meal analysis
 
-    private static let mealSchemaJSON = """
+    private static let mealShape = """
     {
-      "type": "OBJECT",
-      "properties": {
-        "summary": {"type": "STRING", "description": "Short name of the meal, under 60 characters."},
-        "items": {
-          "type": "ARRAY",
-          "items": {
-            "type": "OBJECT",
-            "properties": {
-              "name": {"type": "STRING"},
-              "portion": {"type": "STRING", "description": "Estimated portion, e.g. 1 bowl, about 250 g."},
-              "kcal": {"type": "NUMBER"},
-              "protein_g": {"type": "NUMBER"},
-              "carbs_g": {"type": "NUMBER"},
-              "fat_g": {"type": "NUMBER"}
-            },
-            "required": ["name", "portion", "kcal", "protein_g", "carbs_g", "fat_g"]
-          }
-        },
-        "total_kcal": {"type": "NUMBER"},
-        "protein_g": {"type": "NUMBER"},
-        "carbs_g": {"type": "NUMBER"},
-        "fat_g": {"type": "NUMBER"},
-        "fiber_g": {"type": "NUMBER"},
-        "confidence": {"type": "STRING", "enum": ["low", "medium", "high"]},
-        "notes": {"type": "STRING", "description": "One sentence on the main assumption or uncertainty."}
-      },
-      "required": ["summary", "items", "total_kcal", "protein_g", "carbs_g", "fat_g", "fiber_g", "confidence", "notes"]
+      "summary": "short name of the meal, under 60 characters",
+      "items": [
+        {"name": "food", "portion": "estimated portion, e.g. 1 bowl, about 250 g", "kcal": 0, "protein_g": 0, "carbs_g": 0, "fat_g": 0}
+      ],
+      "total_kcal": 0,
+      "protein_g": 0,
+      "carbs_g": 0,
+      "fat_g": 0,
+      "fiber_g": 0,
+      "confidence": "low | medium | high",
+      "notes": "one sentence on the main assumption or uncertainty"
     }
     """
 
@@ -114,25 +120,18 @@ enum GeminiClient {
     static func analyzeMeal(description: String, image: UIImage?, mealType: MealType) async throws -> MealEstimate {
         var parts: [[String: Any]] = []
         if let image, let jpeg = image.resized(maxSide: 1568).jpegData(compressionQuality: 0.7) {
-            let inline: [String: Any] = ["mime_type": "image/jpeg", "data": jpeg.base64EncodedString()]
-            parts.append(["inline_data": inline])
+            parts.append(imagePart(jpeg))
         }
         let note = description.trimmingCharacters(in: .whitespacesAndNewlines)
         var prompt = "This is what I ate for \(mealType.title.lowercased()). "
         prompt += note.isEmpty ? "No description was given; go by the photo." : "My description: \(note)"
         prompt += "\nEstimate each food's portion and nutrition, then the meal totals. "
         prompt += "Use typical restaurant or canteen portions when the size is unclear, and count cooking oil and sauces."
-        parts.append(["text": prompt])
+        parts.append(textPart(prompt))
 
-        let schema = (try? JSONSerialization.jsonObject(with: Data(mealSchemaJSON.utf8))) ?? [String: Any]()
-        let config: [String: Any] = [
-            "response_mime_type": "application/json",
-            "response_schema": schema,
-            "temperature": 0.2,
-        ]
-        let system = "You are a careful nutrition estimator. Give realistic single best estimates, not ranges. The user may write in English or Chinese; write the summary and food names in English."
+        let system = "You are a careful nutrition estimator. Give realistic single best estimates, not ranges. The user may write in English or Chinese; write the summary and food names in English. Numbers are plain numbers without units." + jsonInstruction(mealShape)
 
-        let text = try await generate(system: system, parts: parts, config: config)
+        let text = try await generate(system: system, parts: parts, json: true, temperature: 0.2)
         guard let input = (try? JSONSerialization.jsonObject(with: Data(text.utf8))) as? [String: Any] else {
             throw AIError.badResponse
         }
@@ -163,44 +162,20 @@ enum GeminiClient {
 
     // MARK: - Dish suggestions
 
-    private static let dishSchemaJSON = """
+    private static let dishShape = """
     {
-      "type": "OBJECT",
-      "properties": {
-        "lunch": {"type": "ARRAY"},
-        "dinner": {"type": "ARRAY"},
-        "tip": {"type": "STRING", "description": "One practical sentence for the coming week."}
-      },
-      "required": ["lunch", "dinner", "tip"]
-    }
-    """
-
-    private static let dishItemJSON = """
-    {
-      "type": "OBJECT",
-      "properties": {
-        "name": {"type": "STRING"},
-        "reason": {"type": "STRING", "description": "One sentence: why it fits, and the portion or swap that makes it fit."},
-        "kcal": {"type": "NUMBER"},
-        "protein_g": {"type": "NUMBER"},
-        "carbs_g": {"type": "NUMBER"},
-        "fat_g": {"type": "NUMBER"}
-      },
-      "required": ["name", "reason", "kcal", "protein_g", "carbs_g", "fat_g"]
+      "lunch": [
+        {"name": "dish", "reason": "one sentence: why it fits, and the portion or swap that makes it fit", "kcal": 0, "protein_g": 0, "carbs_g": 0, "fat_g": 0}
+      ],
+      "dinner": [
+        {"name": "dish", "reason": "one sentence", "kcal": 0, "protein_g": 0, "carbs_g": 0, "fat_g": 0}
+      ],
+      "tip": "one practical sentence for the coming week"
     }
     """
 
     /// Recommends lunch and dinner dishes that fit the plan, starting from what the user already eats.
     static func suggestDishes(meals: [MealSnapshot], plan: GoalPlan) async throws -> DishSuggestions {
-        // Build the schema with the dish object inlined in both lists.
-        guard var schema = (try? JSONSerialization.jsonObject(with: Data(dishSchemaJSON.utf8))) as? [String: Any],
-              var properties = schema["properties"] as? [String: Any],
-              let dish = try? JSONSerialization.jsonObject(with: Data(dishItemJSON.utf8)) else { throw AIError.badResponse }
-        let list: [String: Any] = ["type": "ARRAY", "items": dish]
-        properties["lunch"] = list
-        properties["dinner"] = list
-        schema["properties"] = properties
-
         let recent = meals.sorted { $0.date > $1.date }.prefix(30)
         let history = recent.map { meal in
             String(format: "- %@: %@ (%.0f kcal, protein %.0f g, carbs %.0f g, fat %.0f g)",
@@ -218,14 +193,9 @@ enum GeminiClient {
 
         Recommend 3 lunch dishes and 3 dinner dishes. Start from dishes I already eat or close variants I could get at the same places, and say what portion, swap or side makes each one fit the target. Give estimated nutrition for the dish as you recommend it.
         """
-        let config: [String: Any] = [
-            "response_mime_type": "application/json",
-            "response_schema": schema,
-            "temperature": 0.6,
-        ]
-        let system = "You are a practical meal planner. Recommend ordinary, obtainable dishes, not recipes. Write in English. Keep each reason to one sentence."
+        let system = "You are a practical meal planner. Recommend ordinary, obtainable dishes, not recipes. Write in English. Keep each reason to one sentence. Numbers are plain numbers without units." + jsonInstruction(dishShape)
 
-        let text = try await generate(system: system, parts: [["text": prompt]], config: config)
+        let text = try await generate(system: system, parts: [textPart(prompt)], json: true, temperature: 0.6)
         guard let output = (try? JSONSerialization.jsonObject(with: Data(text.utf8))) as? [String: Any] else {
             throw AIError.badResponse
         }
@@ -249,7 +219,7 @@ enum GeminiClient {
 
     // MARK: - Weekly observations
 
-    /// Asks Gemini for two or three short observations on the week's figures.
+    /// Asks DeepSeek for two or three short observations on the week's figures.
     static func weeklyObservations(reportJSON: String) async throws -> [String] {
         let system = """
         You write the closing observations of a personal weekly health summary. The data comes \
@@ -261,8 +231,8 @@ enum GeminiClient {
         them only as a week-over-week trend and never as a problem. The user skips breakfast by choice; \
         do not comment on that. Meal figures are estimates from photos.
         """
-        let parts: [[String: Any]] = [["text": "This week's data and the previous week's, as JSON:\n\(reportJSON)"]]
-        let text = try await generate(system: system, parts: parts, config: ["temperature": 0.4])
+        let parts = [textPart("This week's data and the previous week's, as JSON:\n\(reportJSON)")]
+        let text = try await generate(system: system, parts: parts, json: false, temperature: 0.4)
         let lines = text.split(separator: "\n")
             .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "-•* ").union(.whitespaces)) }
             .filter { !$0.isEmpty }

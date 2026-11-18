@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftData
 import PhotosUI
 
-/// Photo-only meal logging: take or pick a picture, Gemini works out the nutrition,
+/// Photo-only meal logging: take or pick a picture, DeepSeek works out the nutrition,
 /// and the meal is saved without any typing.
 struct QuickLogView: View {
     @Environment(\.modelContext) private var context
@@ -182,7 +182,7 @@ struct QuickLogView: View {
         guard let image, phase != .analyzing else { return }
         phase = .analyzing
         do {
-            let estimate = try await GeminiClient.analyzeMeal(description: "", image: image, mealType: mealType)
+            let estimate = try await DeepSeekClient.analyzeMeal(description: "", image: image, mealType: mealType)
             guard estimate.kcal > 0 else {
                 phase = .failed("No food could be recognised in that photo. Try another one.")
                 return
@@ -197,7 +197,7 @@ struct QuickLogView: View {
             entry.items = estimate.items
             entry.confidence = estimate.confidence
             entry.analysisNotes = estimate.notes
-            entry.source = "gemini"
+            entry.source = "deepseek"
             entry.photo = image.resized(maxSide: 1024).jpegData(compressionQuality: 0.6)
             context.insert(entry)
             try? context.save()

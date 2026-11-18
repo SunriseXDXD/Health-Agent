@@ -3,7 +3,7 @@ import Security
 
 /// UserDefaults keys and defaults shared by the settings screen and the services.
 enum Prefs {
-    static let model = "geminiModel"
+    static let model = "deepseekModel"
     static let remindersOn = "remindersOn"
     static let lunchMinutes = "lunchMinutes"
     static let dinnerMinutes = "dinnerMinutes"
@@ -15,7 +15,7 @@ enum Prefs {
     static let smallBottleMl = "smallBottleMl"
     static let largeBottleMl = "largeBottleMl"
 
-    static let defaultModel = "gemini-3.5-flash"
+    static let defaultModel = "deepseek-flash"
 
     static var defaults: UserDefaults { .standard }
 
@@ -47,10 +47,10 @@ enum Prefs {
     }
 }
 
-/// The Gemini API key lives in the Keychain, not in UserDefaults.
+/// The DeepSeek API key lives in the Keychain, not in UserDefaults.
 enum Keychain {
     private static let service = "com.xuyaofeng.HealthAgent"
-    private static let account = "gemini-api-key"
+    private static let account = "deepseek-api-key"
 
     static var apiKey: String {
         get {

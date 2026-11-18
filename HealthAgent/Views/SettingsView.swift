@@ -32,9 +32,9 @@ struct SettingsView: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                 } header: {
-                    Text("Gemini API")
+                    Text("DeepSeek API")
                 } footer: {
-                    Text("Used to estimate meals from photos and to write the weekly observations. Create a free key at aistudio.google.com (no card needed). It is kept in this phone's Keychain and sent only to Google. On the free tier Google may use what you send to improve its products. If the model name stops working, try gemini-3.8-flash or gemini-3.1-flash-lite.")
+                    Text("Used to estimate meals from photos, recommend dishes and write the weekly observations. Create a key at platform.deepseek.com. It is kept in this phone's Keychain and sent only to api.deepseek.com. The model must accept images; deepseek-flash does.")
                 }
 
                 Section {

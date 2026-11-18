@@ -23,7 +23,7 @@ enum MealType: String, Codable, CaseIterable, Identifiable {
     }
 }
 
-/// One food in a meal, as estimated by Gemini or typed in by hand.
+/// One food in a meal, as estimated by DeepSeek or typed in by hand.
 struct FoodItem: Codable, Identifiable, Hashable {
     var id = UUID()
     var name: String
@@ -52,7 +52,7 @@ final class MealEntry {
     var fiberG: Double = 0
     var itemsData: Data?
     @Attribute(.externalStorage) var photo: Data?
-    /// "gemini" or "manual"
+    /// "deepseek", "gemini" (older entries) or "manual"
     var source: String = "manual"
     var confidence: String = ""
     var analysisNotes: String = ""

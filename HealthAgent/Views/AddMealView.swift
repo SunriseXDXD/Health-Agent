@@ -3,7 +3,7 @@ import SwiftData
 import PhotosUI
 
 /// Logs a new meal or edits an existing one. A photo and/or a line of text goes to
-/// Gemini for an estimate; every number can be corrected by hand before saving.
+/// DeepSeek for an estimate; every number can be corrected by hand before saving.
 struct AddMealView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
@@ -140,7 +140,7 @@ struct AddMealView: View {
             } label: {
                 HStack {
                     if isAnalyzing { ProgressView() }
-                    Text(isAnalyzing ? "Estimating…" : "Estimate nutrition with Gemini")
+                    Text(isAnalyzing ? "Estimating…" : "Estimate nutrition with DeepSeek")
                 }
             }
             .disabled(isAnalyzing || (image == nil && note.trimmingCharacters(in: .whitespaces).isEmpty))
@@ -197,7 +197,7 @@ struct AddMealView: View {
         isAnalyzing = true
         defer { isAnalyzing = false }
         do {
-            let estimate = try await GeminiClient.analyzeMeal(description: note, image: image, mealType: mealType)
+            let estimate = try await DeepSeekClient.analyzeMeal(description: note, image: image, mealType: mealType)
             summary = estimate.summary
             items = estimate.items
             kcal = estimate.kcal.rounded()
@@ -207,7 +207,7 @@ struct AddMealView: View {
             fiber = estimate.fiberG.rounded()
             confidence = estimate.confidence
             analysisNotes = estimate.notes
-            source = "gemini"
+            source = "deepseek"
         } catch {
             errorMessage = error.localizedDescription
         }
